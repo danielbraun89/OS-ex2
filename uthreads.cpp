@@ -1,7 +1,26 @@
 //
 // Created by Daniel on 12/05/2018.
 //
+#include "Thread.h"
+#include "uthreads.h"
+#include <queue>
+#include <functional>
+#include <queue>
+#include <vector>
+#include <iostream>
 
+std::priority_queue<int, std::vector<int>, std::greater<int> > thread_id_queue; // from the example here: http://en.cppreference.com/w/cpp/container/priority_queue
+
+Thread* base_thread; //pointer to hold the base thread (thread with id 0)
+
+Thread* running_thread; //pointer to the current running thread (there can only be one)
+
+std::deque<Thread*> ready_threads;
+//std::priority_queue<Thread, std::vector<Thread>, std::greater<Thread>> ready_threads; //will pull the thread with smallest line number
+
+std::vector<Thread*> blocked_threads; // no queue required for blocked
+
+int length_of_quantum;
 
 /*
  * Description: This function initializes the thread library.
@@ -11,7 +30,17 @@
  * function with non-positive quantum_usecs.
  * Return value: On success, return 0. On failure, return -1.
 */
-int uthread_init(int quantum_usecs){}
+int uthread_init(int quantum_usecs)
+{
+    length_of_quantum = quantum_usecs;
+    for (int i = 1; i <= MAX_THREAD_NUM; ++i)
+    {
+        thread_id_queue.push(i);
+    }
+    base_thread = new Thread(0);
+    running_thread = base_thread;
+
+}
 
 /*
  * Description: This function creates a new thread, whose entry point is the
@@ -23,7 +52,16 @@ int uthread_init(int quantum_usecs){}
  * Return value: On success, return the ID of the created thread.
  * On failure, return -1.
 */
-int uthread_spawn(void (*f)(void)){}
+int uthread_spawn(void (*f)(void))
+{
+    Thread* new_thread;
+    int new_id = thread_id_queue.top();
+    new_thread = new Thread(new_id);
+    ready_threads.push_back(new_thread);
+
+    thread_id_queue.pop();
+    return new_id;
+}
 
 
 /*
@@ -37,7 +75,41 @@ int uthread_spawn(void (*f)(void)){}
  * terminated and -1 otherwise. If a thread terminates itself or the main
  * thread is terminated, the function does not return.
 */
-int uthread_terminate(int tid){}
+int uthread_terminate(int tid)
+{
+    Thread* thread_to_kill_p;
+    //look for it in the running thread
+    if(running_thread->get_id() == tid)
+    {
+        thread_to_kill_p = running_thread;
+    }
+
+    //look for it in the blocked threads vector
+    for(std::size_t i=0; i<blocked_threads.size(); ++i)
+    {
+        if (blocked_threads[i]->get_id() == tid)
+        {
+            thread_to_kill_p = blocked_threads[i];
+            blocked_threads.erase(blocked_threads.begin() + i);
+            break;
+        }
+    }
+
+    //look for it in the ready threads vector
+    for(std::size_t i=0; i<ready_threads.size(); ++i)
+    {
+        if (ready_threads[i]->get_id() == tid)
+        {
+            thread_to_kill_p = ready_threads[i];
+            ready_threads.erase(ready_threads.begin() + i);
+
+            break;
+        }
+    }
+    thread_id_queue.push(tid);
+    delete thread_to_kill_p;
+    return 0;
+}
 
 
 /*
