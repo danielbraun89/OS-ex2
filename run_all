@@ -1,0 +1,13 @@
+#!/bin/bash
+
+TIMEOUT_CODE="124"
+TESTS="1 2 5 14 42 132 429 1430"
+
+for i in $TESTS
+do
+	timeout -k 1 10 ./test$i
+	EXIT_STATUS=$?
+	if [ "$EXIT_STATUS" -eq "$TIMEOUT_CODE" ] ; then
+		echo "ERROR - timeout reached"
+	fi
+done

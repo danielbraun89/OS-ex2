@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <setjmp.h>
+#include <string>
 
 
 class Thread
@@ -19,6 +20,7 @@ private:
     int id;
     sigjmp_buf env;
     int quantum_number;
+    std::string state;
     char allocated_stack[STACK_SIZE];  //example stack, does not really do anything
 
 public:
@@ -53,6 +55,21 @@ public:
     {
         return id;
     };
+
+    sigjmp_buf*  get_env_p()
+    {
+        return &env;
+    };
+
+    std::string get_state()
+    {
+        return state;
+    }
+
+    void set_state(std::string input)
+    {
+        state = input;
+    }
 };
 
 #endif //EX2_THREAD_H

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [ ! -f libuthreads.a ]; then
+	echo "libuthreads.a could not be found"
+	exit 1
+fi
+
+TESTS="1 2 5 14 42 132 429 1430"
+
+for i in $TESTS
+do
+	echo "compiling test $i"
+	g++ -std=c++11 test$i.cpp -L. -luthreads -o test$i
+done
+
+
+
