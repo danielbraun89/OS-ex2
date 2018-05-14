@@ -2,17 +2,18 @@
 // Created by Daniel on 12/05/2018.
 //
 #include "Thread.h"
-#include "uthreads.h"
 #include <queue>
 #include <functional>
+#include <algorithm>
 #include <list>
 #include <iostream>
 #include <unordered_map>
 #include <map>
 
-#define MILLION 1000000
-#define EXIT_FAILURE (-1)
-#define EXIT_SUCCESS 0
+#define MIL 1000000
+#define EXIT_FAIL (-1)
+#define EXIT_OK 0
+
 
 std::priority_queue<int, std::vector<int>, std::greater<int> > thread_id_queue; // from the example here: http://en.cppreference.com/w/cpp/container/priority_queue
 
@@ -33,9 +34,27 @@ struct itimerval timer;
 
 struct sigaction action;
 
+/**
+ * helps in debuging
+ */
+void debug_print()
+{
+    for ( auto it = thread_map.begin(); it != thread_map.end(); ++it  )
+    {
+        bool a = (std::find(ready_threads.begin(), ready_threads.end(), it->second->get_id()) != ready_threads.end());
+        printf("t:%d d:%d s:%s\t\tr:%d\n", it->second->get_id(), it->second->get_depend_on(), it->second->get_state().c_str(), a);
+        fflush(stdout);
+    }
+    std::cout<<"ready_list: ";
+    for(auto it = ready_threads.begin(); it != ready_threads.end(); ++it){
+        std::cout<<*it;
+    }
+    std::cout<<std::endl;
+    fflush(stdout);
+}
 
 
-
+int running_id;
 /**
  * add or remove the SIGVTALRM signal
  * @param status  int: whether to block or unblock the signal
@@ -46,7 +65,7 @@ int block_SIGVTALRM(int status){
     int ret = sigemptyset(&singnal_set);
     if(ret == -1)
     {
-        std::cerr<<"problem with creating empty set"<<std::endl;
+        std::cerr<<"system error: cant create empty set"<<std::endl;
         return -1;
     }
 
@@ -54,14 +73,14 @@ int block_SIGVTALRM(int status){
 
     if(ret == -1)
     {
-        std::cerr<<"problem with adding SIGVTALRM to the signal set"<<std::endl;
+        std::cerr<<"system error: cant SIGVTALRM to the signal set"<<std::endl;
         return -1;
     }
 
-    ret = sigprocmask(status, &singnal_set, NULL);
+    ret = sigprocmask(status, &singnal_set, nullptr);
     if(ret == -1)
     {
-        std::cerr<<"problem with blocking or unblocking the signal"<<std::endl;
+        std::cerr<<"system error: cant unblocking the signals"<<std::endl;
         return -1;
     }
     return 0;
@@ -76,31 +95,31 @@ void delete_all();
  */
 void set_timer(int usecs) {
 
-    timer.it_value.tv_sec = usecs/MILLION;
-    timer.it_value.tv_usec = usecs%MILLION;
+    timer.it_value.tv_sec = usecs/MIL;
+    timer.it_value.tv_usec = usecs%MIL;
 
-    timer.it_interval.tv_sec = usecs/MILLION;
-    timer.it_interval.tv_usec = usecs%MILLION;
+    timer.it_interval.tv_sec = usecs/MIL;
+    timer.it_interval.tv_usec = usecs%MIL;
 
-    if (setitimer(ITIMER_VIRTUAL, &timer, NULL)) {
+    if (setitimer(ITIMER_VIRTUAL, &timer, nullptr)) {
         delete_all();
-        std::cerr<<"thread library error: timer set error."<<std::endl;
+        std::cerr<<"thread library error: set timer error"<<std::endl;
         exit(1);
     }
 }
 
 
-
 /**
- * @brief releasing the assigned library memory
+ * @brief releasing memory
  */
 void delete_all()
 {
     set_timer(0);
-    for (int i = 1; i < MAX_THREAD_NUM; i++)
+    for ( auto it = thread_map.begin(); it != thread_map.end(); ++it  )
     {
-        delete thread_map[i];
+        delete (it->second);
     }
+
 }
 
 
@@ -116,12 +135,13 @@ void release_dependency(int tid)
         if (it->second->get_depend_on() == tid)
         {
             it->second->set_depend_on(-1);
+            // if it was not blocked beforehand, we can return it to the ready list
+            if (it->second->get_state() == "ready")
+            {
+                ready_threads.push_back(it->second->get_id());
+            }
         }
-        // if it was not blocked beforehand, we can return it to the ready list
-        if (it->second->get_state() == "ready")
-        {
-            ready_threads.push_back(it->second->get_id());
-        }
+
     }
 }
 
@@ -133,25 +153,27 @@ void release_dependency(int tid)
 void switch_threads(){
     set_timer(0);
     // running thread has been already been handled (either pushed back or blocked or whatever)
-    if (uthread_get_tid() != EXIT_FAILURE)
+    if (nullptr != thread_map[running_id])
     {
-        int ret_val = sigsetjmp(*(thread_map[uthread_get_tid()]->get_env_p()), 1);
-        if (ret_val == 7)
+        int ret_val = sigsetjmp(*(thread_map[running_id]->get_env_p()), 1);
+        if (ret_val == 1)
         {
             return;
         }
         //TODO  check if need to release dependency on here
-        release_dependency(uthread_get_tid());
+        release_dependency(running_id);
     }
+    //debug_print();
 
-    // jump to the next thread on the ready list
+    // jumping to the next thread on the ready list
+    running_id = ready_threads.front();
     total_num_of_quantums++;
-    thread_map[ready_threads.front()]->set_state("running");
+    thread_map[running_id]->set_state("running");
     ready_threads.pop_front();
     set_timer(length_of_quantum);
-    siglongjmp(*(thread_map[uthread_get_tid()]->get_env_p()),7);
-}
 
+    siglongjmp(*(thread_map[running_id]->get_env_p()),1);
+}
 
 
 
@@ -162,7 +184,9 @@ void switch_threads(){
 void my_timer_handler(int signal)
 {
     //move the running thread the end of the ready list
-    ready_threads.push_back(uthread_get_tid());
+
+    ready_threads.push_back(running_id);
+    thread_map[running_id]->set_state("ready");
     switch_threads(); //call switch threads
 }
 
@@ -178,8 +202,8 @@ int uthread_init(int quantum_usecs)
 {
     if (quantum_usecs < 1)
     {
-        std::cerr<<" invalid quantum length"<<std::endl;
-        return EXIT_FAILURE;
+        std::cerr<<"thread library error: quantum length not ok"<<std::endl;
+        return EXIT_FAIL;
     }
 
     length_of_quantum = quantum_usecs;
@@ -188,18 +212,18 @@ int uthread_init(int quantum_usecs)
         thread_id_queue.push(i);
     }
     sigaddset(&singnal_set, SIGVTALRM);
-    uthread_spawn(NULL);
+    uthread_spawn(nullptr);
     total_num_of_quantums = 1;
 
     // make my_timer_handler the signal handler for SIGVTALRM.
     action.sa_handler = &my_timer_handler;
-    if (sigaction(SIGVTALRM, &action,NULL) < 0)
+    if (sigaction(SIGVTALRM, &action,nullptr) < 0)
     {
-        std::cerr<<"thread library error: sigaction error."<<std::endl;
+        std::cerr<<"thread library error: sigaction fail."<<std::endl;
     }
     // set timer
     set_timer(length_of_quantum);
-    return EXIT_SUCCESS;
+    return EXIT_OK;
 }
 
 /*
@@ -217,7 +241,7 @@ int uthread_spawn(void (*f)(void))
     block_SIGVTALRM(0);
     if (thread_id_queue.empty())
     {
-        std::cerr << "maximum threads exceeded\n";
+        std::cerr << "thread library error: maximum number ofthreads exceeded\n";
         return -1;
     }
     int new_id = thread_id_queue.top();
@@ -229,7 +253,7 @@ int uthread_spawn(void (*f)(void))
     }
     catch (std::bad_alloc&)
     {
-        std::cerr << "could not create a thread object\n";
+        std::cerr << "system error: could not create a thread object\n";
         return -1;
     }
     thread_map[new_id] = new_thread;
@@ -243,6 +267,7 @@ int uthread_spawn(void (*f)(void))
     else
     {
         thread_map[new_id]->set_state("running");
+        running_id = new_id;
     }
     block_SIGVTALRM(1);
     return new_id;
@@ -264,36 +289,33 @@ int uthread_terminate(int tid)
 {
     block_SIGVTALRM(0);
 
-    if (thread_map[tid] == NULL)
+    if (thread_map[tid] == nullptr)
     {
-        std::cerr << " invalid thread id in terminate\n";
-        return EXIT_FAILURE;
+        std::cerr << "thread library error: invalid thread id in terminate\n";
+        return EXIT_FAIL;
     }
-    //look for it in the running thread
 
     if(0 == tid)
     {
         delete_all();
         exit(0);
     }
-
     thread_id_queue.push(tid);
 
     //look for it in the ready threads vector, if its there remove it from there
-    if (thread_map[tid]->get_state()=="ready")
+    if (std::find(ready_threads.begin(), ready_threads.end(), tid) != ready_threads.end())
     {
         ready_threads.remove(tid);
     }
 
-    int running_id = thread_map[tid]->get_state() == "running";
-
     release_dependency(tid);
     delete thread_map[tid];
-    thread_map[tid] = NULL;
+    thread_map.erase(tid);
 
 
     if(tid == running_id){
         block_SIGVTALRM(1);
+
         switch_threads();
     }
     block_SIGVTALRM(1);
@@ -313,14 +335,14 @@ int uthread_terminate(int tid)
 int uthread_block(int tid)
 {
     block_SIGVTALRM(0);
-    if (thread_map[tid] == NULL)
+    if (thread_map[tid] == nullptr)
     {
-        std::cerr << " invalid thread to block\n";
-        return EXIT_FAILURE;
+        std::cerr << "thread library error: invalid thread to block\n";
+        return EXIT_FAIL;
     }
     if (0 == tid)
     {
-        std::cerr << "cant block the main thread\n";
+        std::cerr << "thread library error: cant block the main thread\n";
         return -1;
     }
 
@@ -331,18 +353,18 @@ int uthread_block(int tid)
     {
         block_SIGVTALRM(1);
         switch_threads();
-        return EXIT_SUCCESS;
+        return EXIT_OK;
     }
 
     if(prev_state == "ready")
     {
         ready_threads.remove(tid);
         block_SIGVTALRM(1);
-        return EXIT_SUCCESS;
+        return EXIT_OK;
     }
 
     block_SIGVTALRM(1);
-    return EXIT_SUCCESS;
+    return EXIT_OK;
 }
 
 
@@ -356,10 +378,10 @@ int uthread_block(int tid)
 int uthread_resume(int tid)
 {
     block_SIGVTALRM(0);
-    if (thread_map[tid] == NULL)
+    if (thread_map[tid] == nullptr)
     {
-        std::cerr << " invalid thread to resume\n";
-        return EXIT_FAILURE;
+        std::cerr << "thread library error: invalid thread to resume...\n";
+        return EXIT_FAIL;
     }
 
     if(thread_map[tid]->get_state() == "blocked")
@@ -372,7 +394,7 @@ int uthread_resume(int tid)
 
     }
     block_SIGVTALRM(1);
-    return EXIT_SUCCESS;
+    return EXIT_OK;
 }
 
 
@@ -387,34 +409,34 @@ int uthread_resume(int tid)
 int uthread_sync(int tid)
 {
     block_SIGVTALRM(0);
-    if (thread_map[tid] == NULL)
+    if (thread_map[tid] == nullptr)
     {
-        std::cerr << " invalid thread to sync\n";
-        return EXIT_FAILURE;
+        std::cerr << "thread library error: invalid thread to sync...\n";
+        return EXIT_FAIL;
     }
 
-    if (uthread_get_tid() == tid)
+    if (running_id == tid)
     {
-        std::cerr << " a thread cant sync itself\n";
-        return EXIT_FAILURE;
+        std::cerr << "thread library error: a thread cant sync itself...\n";
+        return EXIT_FAIL;
     }
 
-    if (uthread_get_tid() == 0)
+    if (running_id == 0)
     {
-        std::cerr << " the main thread cant sync to other threads\n";
-        return EXIT_FAILURE;
+        std::cerr << "thread library error: the main thread cant sync to other threads...\n";
+        return EXIT_FAIL;
     }
 
     //remove the thread from running and change its status to ready
     //not to blocked because we need to diffrenciate from real blocked and
     //we are not allowed to add new states...
-    ready_threads.remove(uthread_get_tid());
-    thread_map[tid]->set_state("ready");
-    thread_map[tid]->set_depend_on(tid);
+    ready_threads.remove(running_id);
+    thread_map[running_id]->set_state("ready");
+    thread_map[running_id]->set_depend_on(tid);
 
     block_SIGVTALRM(1);
     switch_threads();
-    return EXIT_SUCCESS;
+    return EXIT_OK;
 }
 
 
@@ -424,15 +446,7 @@ int uthread_sync(int tid)
 */
 int uthread_get_tid()
 {
-    for ( auto it = thread_map.begin(); it != thread_map.end(); ++it  )
-    {
-        if (it->second->get_state() == "running")
-        {
-            return it->second->get_id();
-        }
-    }
-
-    return EXIT_FAILURE;
+    return running_id;
 }
 
 
@@ -462,13 +476,12 @@ int uthread_get_total_quantums()
 */
 int uthread_get_quantums(int tid)
 {
-    if (thread_map[tid] == NULL)
+    if (thread_map[tid] == nullptr)
     {
-        std::cerr << " invalid thread to sync\n";
-        return EXIT_FAILURE;
+        std::cerr << "thread library error: invalid thread to get quantums...\n";
+        return EXIT_FAIL;
     }
     return thread_map[tid]->get_quantum_number();
 }
-
 
 

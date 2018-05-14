@@ -24,8 +24,10 @@ void thread1()
 {
     while (!thread2Spawned)
     {}
-
+    printf(GRN "thread 1 sync to 2    \n" RESET);
+    fflush(stdout);
     uthread_sync(2);
+
     if (!thread2Executed)
     {
         printf(RED "ERROR - thread did not wait to sync\n" RESET);
@@ -37,18 +39,23 @@ void thread1()
 
 void thread2()
 {
+    printf(GRN "thread started2    \n" RESET);
+    fflush(stdout);
     thread2Executed = true;
     halt();
 }
 
 int main()
 {
-    printf(GRN "Test 2:    " RESET);
+    printf(GRN "Test 2:    \n" RESET);
     fflush(stdout);
 
     uthread_init(20);
+    printf(GRN "post init    \n" RESET);
     uthread_spawn(thread1);
+    printf(GRN "uthread_spawn(thread1)    \n" RESET);
     uthread_spawn(thread2);
+    printf(GRN "uthread_spawn(thread2)    \n" RESET);
     thread2Spawned = true;
     halt();
 }

@@ -53,17 +53,16 @@ int main()
 //    a = uthread_spawn(thread1);
 //    printf(GRN "id: %d   ", a);
 //    fflush(stdout);
-
     printf(GRN "hi  \n");
     if (int a = uthread_spawn(thread1) != 1)
     {
-        printf(GRN "id not ok: %d   \n", a);
+        printf(GRN "id: %d   \n", a);
         fflush(stdout);
         error();
     }
     else
     {
-        printf(GRN "id ok: %d   \n", a);
+        printf(GRN "id: %d   \n", a);
         fflush(stdout);
     }
 

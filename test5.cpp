@@ -29,14 +29,20 @@ int next_thread()
 
 void thread()
 {
+    printf("sync to %d\n", next_thread());
+    fflush(stdout);
     uthread_sync(next_thread());
-
+    printf("sync to %d\n", next_thread());
+    fflush(stdout);
     uthread_sync(next_thread());
-
+    printf("block %d\n", uthread_get_tid());
+    fflush(stdout);
     uthread_block(uthread_get_tid());
 
     for (int i = 0; i < 50; i++)
     {
+        printf("resume %d\n", next_thread());
+        fflush(stdout);
         uthread_resume(next_thread());
     }
 
@@ -69,9 +75,11 @@ int main()
     {
         thread_status[i] = RUN;
     }
-
+    printf("resume 1\n");
+    fflush(stdout);
     while (!all_done())
     {
+
         uthread_resume(1);
     }
 

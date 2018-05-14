@@ -4,6 +4,7 @@
 
 #ifndef EX2_THREAD_H
 #define EX2_THREAD_H
+#include <iostream>
 #include "uthreads.h"
 #include <stdio.h>
 #include <signal.h>
@@ -38,7 +39,7 @@ typedef unsigned int address_t;
 #define JB_SP 4
 #define JB_PC 5
 
-/* A translation is required when using an address of a variable.
+/* A translation is required whe#include <iostream>n using an address of a variable.
    Use this as a black box in your code. */
 address_t translate_address(address_t addr)
 {
@@ -53,8 +54,6 @@ address_t translate_address(address_t addr)
 #endif
 
 
-
-
 class Thread
 {
 
@@ -65,31 +64,44 @@ private:
     sigjmp_buf env;
     int quantum_number;
     std::string state;
-    char allocated_stack[STACK_SIZE];  //example stack, does not really do anything
+    char* allocated_stack;
+    //char allocated_stack[STACK_SIZE];  //example stack, does not really do anything
 
-    address_t sp;
-    address_t pc;
+    address_t stack_pointer;
+    address_t program_counter;
 
 public:
-    unsigned long long line_number;
     /**
      * constructor
      */
-    Thread(int tid, void (*f)(void)) : id(id) , quantum_number(1), depend_on(-1)
+    Thread(int tid, void (*f)(void)) : id(tid) ,depend_on(-1) ,quantum_number(0)
     {
-        sp = (address_t)allocated_stack + STACK_SIZE - sizeof(address_t);
-        pc = (address_t)f;
+        try
+        {
+            allocated_stack = new char[STACK_SIZE];
+            stack_pointer = (address_t)allocated_stack + STACK_SIZE - sizeof(address_t);
+            program_counter = (address_t)f;
 
-        sigsetjmp(env, 7); //TODO make sure 7 is ok
-        (env->__jmpbuf)[JB_SP] = translate_address(sp); //todo to understand what the this does
-        (env->__jmpbuf)[JB_PC] = translate_address(pc);
-        sigemptyset(&env->__saved_mask);
+            sigsetjmp(env, 1);
+            (env->__jmpbuf)[JB_SP] = translate_address(stack_pointer);
+            (env->__jmpbuf)[JB_PC] = translate_address(program_counter);
+            sigemptyset(&env->__saved_mask);
+            state = "ready";
+        }
+        catch (std::bad_alloc&)
+        {
+            std::cerr << "system error: could not create a thread object\n";
+        }
+
     };
 
     /**
      * destructor
      */
-    ~Thread(){};
+    ~Thread()
+    {
+        delete[] allocated_stack;
+    };
 
     /**
      * a comparison operator.
@@ -103,13 +115,12 @@ public:
         return lhs.get_id() == rhs.get_id();
     };
 
-
     int get_id() const
     {
         return id;
     };
 
-    sigjmp_buf*  get_env_p() const
+    sigjmp_buf*  get_env_p()
     {
         return &env;
     };
@@ -119,8 +130,12 @@ public:
         return state;
     };
 
-    void set_state(std::string input)
+    void set_state(const std::string input)
     {
+        if(input == "running")
+        {
+            quantum_number++;
+        }
         state = input;
     };
 
@@ -137,11 +152,6 @@ public:
     int get_quantum_number() const
     {
         return quantum_number;
-    };
-
-    int set_quantum_number(int input)
-    {
-        quantum_number = input;
     };
 
 };
