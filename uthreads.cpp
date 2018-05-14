@@ -183,8 +183,9 @@ void switch_threads(){
  */
 void my_timer_handler(int signal)
 {
+    // ignoring the presubmit error
+    if (signal) {}
     //move the running thread the end of the ready list
-
     ready_threads.push_back(running_id);
     thread_map[running_id]->set_state("ready");
     switch_threads(); //call switch threads
